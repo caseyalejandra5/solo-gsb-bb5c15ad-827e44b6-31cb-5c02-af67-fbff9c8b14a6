@@ -3,6 +3,7 @@ import type { Subtitle } from './types';
 import { parseSrt, serializeSrt } from './srt';
 import { detectIssues } from './issues';
 import { SAMPLE_SRT } from './sample';
+import { decodeAudioPeaks, describeWaveError, NoAudioError, type WaveState } from './waveform';
 import Toolbar from './components/Toolbar';
 import VideoPlayer from './components/VideoPlayer';
 import Timeline from './components/Timeline';
@@ -24,6 +25,8 @@ export default function App() {
   const [srtName, setSrtName] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoName, setVideoName] = useState('');
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [wave, setWave] = useState<WaveState>({ status: 'idle' });
   const [currentTime, setCurrentTime] = useState(0); // 秒
   const [videoDuration, setVideoDuration] = useState(0);
   const [chainMode, setChainMode] = useState(true);
@@ -88,7 +91,45 @@ export default function App() {
       return URL.createObjectURL(file);
     });
     setVideoName(file.name);
+    // 切换视频：旧波形数据随状态被丢弃（仅存于内存），由 GC 释放
+    setVideoFile(file);
   }, []);
+
+  // ---- 音频波形解码（Web Audio API，纯浏览器内完成，不上传） ----
+  const waveTokenRef = useRef(0);
+  const runWaveDecode = useCallback((file: File) => {
+    const token = ++waveTokenRef.current;
+    setWave({ status: 'decoding' });
+    decodeAudioPeaks(file)
+      .then((peaks) => {
+        if (token !== waveTokenRef.current) return; // 已切换到其他视频
+        setWave({ status: 'ready', peaks });
+      })
+      .catch((err) => {
+        if (token !== waveTokenRef.current) return;
+        if (err instanceof NoAudioError) {
+          setWave({ status: 'no-audio' });
+        } else {
+          setWave({ status: 'error', ...describeWaveError(err) });
+        }
+      });
+  }, []);
+
+  // 选择新视频后自动解码
+  useEffect(() => {
+    if (!videoFile) {
+      waveTokenRef.current++;
+      setWave({ status: 'idle' });
+      return;
+    }
+    runWaveDecode(videoFile);
+  }, [videoFile, runWaveDecode]);
+
+  const retryWave = useCallback(() => {
+    if (videoFile) runWaveDecode(videoFile);
+  }, [videoFile, runWaveDecode]);
+
+  const dismissWave = useCallback(() => setWave({ status: 'idle' }), []);
 
   const loadSample = useCallback(() => loadSrt(SAMPLE_SRT, '示例字幕.srt'), [loadSrt]);
 
@@ -194,11 +235,14 @@ export default function App() {
           duration={timelineDuration}
           pxPerSec={pxPerSec}
           currentTime={currentTime}
+          wave={wave}
           chainMode={chainMode}
           selectedId={selectedId}
           follow={follow}
           onSelect={setSelectedId}
           onSeek={seekTo}
+          onWaveRetry={retryWave}
+          onWaveDismiss={dismissWave}
           onLiveChange={liveChange}
           onDragCommit={commitDrag}
         />

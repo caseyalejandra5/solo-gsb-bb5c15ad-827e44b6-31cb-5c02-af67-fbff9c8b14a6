@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { Subtitle } from '../types';
 import type { IssueType } from '../issues';
 import { formatTimestamp } from '../srt';
+import type { WaveState } from '../waveform';
+import WaveformTrack from './WaveformTrack';
 
 interface TimelineProps {
   subs: Subtitle[];
@@ -12,11 +14,17 @@ interface TimelineProps {
   pxPerSec: number;
   /** 播放头位置（秒） */
   currentTime: number;
+  /** 音频波形状态（解码中 / 就绪 / 无音轨 / 失败） */
+  wave: WaveState;
   chainMode: boolean;
   selectedId: string | null;
   follow: boolean;
   onSelect: (id: string | null) => void;
   onSeek: (sec: number) => void;
+  /** 波形解码失败后重试 */
+  onWaveRetry: () => void;
+  /** 关闭无音轨/失败提示（不影响字幕编辑） */
+  onWaveDismiss: () => void;
   /** 拖动过程中的实时更新（不进历史） */
   onLiveChange: (next: Subtitle[]) => void;
   /** 拖动结束时提交历史，参数为拖动前的快照 */
@@ -78,7 +86,8 @@ function formatTick(sec: number): string {
 }
 
 export default function Timeline(props: TimelineProps) {
-  const { subs, issues, duration, pxPerSec, currentTime, chainMode, selectedId, follow } = props;
+  const { subs, issues, duration, pxPerSec, currentTime, wave, chainMode, selectedId, follow } =
+    props;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -206,6 +215,15 @@ export default function Timeline(props: TimelineProps) {
             ))}
           </div>
 
+          <WaveformTrack
+            wave={wave}
+            pxPerSec={pxPerSec}
+            scrollRef={scrollRef}
+            onSeek={props.onSeek}
+            onRetry={props.onWaveRetry}
+            onDismiss={props.onWaveDismiss}
+          />
+
           <div className="track" onPointerDown={onTrackPointerDown}>
             {subs.length === 0 && (
               <div className="track-empty">导入 SRT 或点击「加载示例」后，字幕块将显示在这里</div>
@@ -236,8 +254,10 @@ export default function Timeline(props: TimelineProps) {
                 </div>
               );
             })}
-            <div className="playhead" style={{ left: currentTime * pxPerSec }} />
           </div>
+
+          {/* 播放头覆盖标尺、波形与字幕轨道，保证三者使用同一时间坐标 */}
+          <div className="playhead" style={{ left: currentTime * pxPerSec }} />
         </div>
       </div>
     </div>
