@@ -3,6 +3,7 @@ import type { Subtitle } from './types';
 import { parseSrt, serializeSrt } from './srt';
 import { detectIssues } from './issues';
 import { SAMPLE_SRT } from './sample';
+import { useWaveform } from './useWaveform';
 import Toolbar from './components/Toolbar';
 import VideoPlayer from './components/VideoPlayer';
 import Timeline from './components/Timeline';
@@ -31,6 +32,7 @@ export default function App() {
   const [pxPerSec, setPxPerSec] = useState(80);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { waveform, loadWaveform, dismissWaveform } = useWaveform();
 
   const issues = useMemo(() => detectIssues(subs), [subs]);
 
@@ -82,13 +84,19 @@ export default function App() {
     [loadSrt]
   );
 
-  const importVideo = useCallback((file: File) => {
-    setVideoUrl((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(file);
-    });
-    setVideoName(file.name);
-  }, []);
+  const importVideo = useCallback(
+    (file: File) => {
+      setVideoUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(file);
+      });
+      setVideoName(file.name);
+      // 浏览器内解码音轨生成波形；失败仅影响波形轨道，不影响字幕编辑。
+      // 旧视频的波形数据随状态替换释放，不会累积在内存中。
+      loadWaveform(file);
+    },
+    [loadWaveform]
+  );
 
   const loadSample = useCallback(() => loadSrt(SAMPLE_SRT, '示例字幕.srt'), [loadSrt]);
 
@@ -197,10 +205,12 @@ export default function App() {
           chainMode={chainMode}
           selectedId={selectedId}
           follow={follow}
+          waveform={waveform}
           onSelect={setSelectedId}
           onSeek={seekTo}
           onLiveChange={liveChange}
           onDragCommit={commitDrag}
+          onDismissWaveform={dismissWaveform}
         />
       </main>
     </div>

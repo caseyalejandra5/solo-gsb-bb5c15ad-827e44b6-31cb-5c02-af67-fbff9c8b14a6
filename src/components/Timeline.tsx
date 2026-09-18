@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { Subtitle } from '../types';
 import type { IssueType } from '../issues';
+import type { WaveformState } from '../useWaveform';
 import { formatTimestamp } from '../srt';
+import WaveformLane from './WaveformLane';
 
 interface TimelineProps {
   subs: Subtitle[];
@@ -21,6 +23,10 @@ interface TimelineProps {
   onLiveChange: (next: Subtitle[]) => void;
   /** 拖动结束时提交历史，参数为拖动前的快照 */
   onDragCommit: (before: Subtitle[]) => void;
+  /** 音频波形状态（idle 时不渲染波形轨道） */
+  waveform: WaveformState;
+  /** 关闭波形错误提示 */
+  onDismissWaveform: () => void;
 }
 
 type DragMode = 'move' | 'resize-l' | 'resize-r';
@@ -79,6 +85,7 @@ function formatTick(sec: number): string {
 
 export default function Timeline(props: TimelineProps) {
   const { subs, issues, duration, pxPerSec, currentTime, chainMode, selectedId, follow } = props;
+  const waveVisible = props.waveform.status !== 'idle';
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -192,7 +199,7 @@ export default function Timeline(props: TimelineProps) {
         <span className="playhead-time">播放头 {formatTimestamp(currentTime * 1000)}</span>
       </div>
 
-      <div className="timeline" ref={scrollRef}>
+      <div className={`timeline${waveVisible ? ' has-wave' : ''}`} ref={scrollRef}>
         <div
           className="timeline-inner"
           ref={innerRef}
@@ -205,6 +212,17 @@ export default function Timeline(props: TimelineProps) {
               </div>
             ))}
           </div>
+
+          {waveVisible && (
+            <WaveformLane
+              status={props.waveform.status}
+              data={props.waveform.data}
+              error={props.waveform.error}
+              pxPerSec={pxPerSec}
+              scrollRef={scrollRef}
+              onDismiss={props.onDismissWaveform}
+            />
+          )}
 
           <div className="track" onPointerDown={onTrackPointerDown}>
             {subs.length === 0 && (
